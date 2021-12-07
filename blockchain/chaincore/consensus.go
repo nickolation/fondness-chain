@@ -1,0 +1,105 @@
+package chaincore
+
+import (
+	"bytes"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/binary"
+	"log"
+	"math"
+	"math/big"
+)
+
+//	difficulty of the hash calculating
+//	determines the numbers of zeroes in the hash value
+const (
+	dif   = 52
+	dif64 = int64(dif)
+	difu  = uint(dif)
+
+	//	max value of randomiser
+	max = 51261616
+)
+
+type FondPow struct {
+	Source FondBlock
+	Target *big.Int
+}
+
+func NewPow(b FondBlock) *FondPow {
+	tg, err := rand.Int(rand.Reader, big.NewInt(max))
+	if err != nil {
+		log.Printf("error with generate random bigInt - [%s]", err)
+	}
+
+	tg.Lsh(tg, 256-difu)
+	log.Printf("target is  - [%x]", tg)
+
+	return &FondPow{
+		Source: b,
+		Target: tg,
+	}
+}
+
+//	calculate temp hash by nonce
+func (pow *FondPow) CalcHash(nonce int) []byte {
+	n, err := Hex(int64(nonce))
+	if err != nil {
+		log.Printf("Nonce hexing error - [%d]", nonce)
+	}
+
+	d, _ := Hex(dif64)
+
+	return bytes.Join(
+		[][]byte{
+			pow.Source.PrevHash,
+			pow.Source.Data,
+			n,
+			d,
+		},
+		[]byte{},
+	)
+}
+
+//	calculate hash of block within the target frames
+//	take the hash and crypto ctr
+func (pow *FondPow) Feel() ([]byte, int) {
+	var nonce = 0
+	var bHash big.Int
+
+	hash := [32]byte{}
+
+	for nonce < math.MaxInt64 {
+		d := pow.CalcHash(nonce)
+		hash = sha256.Sum256(d)
+		bHash.SetBytes(hash[:])
+
+		if bHash.Cmp(pow.Target) == -1 {
+			break
+		}
+		nonce++
+	}
+
+	log.Printf("Nonce is - [%d]", nonce)
+	return hash[:], nonce
+}
+
+//	validate hash on the target frame
+func (pow *FondPow) Validate(hash []byte) bool {
+	var cmp big.Int
+	cmp.SetBytes(hash)
+
+	return cmp.Cmp(pow.Target) == -1
+}
+
+//	convert number to hex string
+func Hex(num int64) ([]byte, error) {
+	buff := new(bytes.Buffer)
+
+	err := binary.Write(buff, binary.BigEndian, num)
+	if err != nil {
+		return nil, err
+	}
+
+	return buff.Bytes(), nil
+}
