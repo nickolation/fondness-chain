@@ -13,12 +13,12 @@ import (
 //	difficulty of the hash calculating
 //	determines the numbers of zeroes in the hash value
 const (
-	dif   = 52
+	dif   = 10
 	dif64 = int64(dif)
 	difu  = uint(dif)
 
 	//	max value of randomiser
-	max = 51261616
+	max = 12000
 )
 
 type FondPow struct {
@@ -28,9 +28,10 @@ type FondPow struct {
 
 func NewPow(b FondBlock) *FondPow {
 	tg, err := rand.Int(rand.Reader, big.NewInt(max))
-	if err != nil {
-		log.Printf("error with generate random bigInt - [%s]", err)
-	}
+	Handle(
+		"error with generate random bigInt",
+		err,
+	)
 
 	tg.Lsh(tg, 256-difu)
 	log.Printf("target is  - [%x]", tg)
@@ -44,9 +45,10 @@ func NewPow(b FondBlock) *FondPow {
 //	calculate temp hash by nonce
 func (pow *FondPow) CalcHash(nonce int) []byte {
 	n, err := Hex(int64(nonce))
-	if err != nil {
-		log.Printf("Nonce hexing error - [%d]", nonce)
-	}
+	Handle(
+		"Nonce hexing error",
+		err,
+	)
 
 	d, _ := Hex(dif64)
 
