@@ -2,11 +2,19 @@ package chaincore
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/gob"
 	"log"
+	"os"
 
-	"github.com/dgraph-io/badger"
+	"github.com/nickolation/fondness-chain/core/utils"
 )
+
+const (
+	//	file == existence blockchain
+	dbPath = "./source/chain/MANIFEST"
+)
+
 
 //	Hanlder with logger based on getting description
 func Handle(des string, err error) {
@@ -14,6 +22,7 @@ func Handle(des string, err error) {
 		log.Printf("%s - [%v]", des, err)
 	}
 }
+
 
 //	FondBlock to []byte
 func (b *FondBlock) ToByter() []byte {
@@ -41,76 +50,76 @@ func ToBlocker(s []byte) *FondBlock {
 	return &block
 }
 
-//	iterator struct for stepping the chain blocks
-type ChainIterator struct {
-	Db *badger.DB
 
-	//	hash of current block
-	Cursor []byte
-
-	//	pointer of the end of chain
-	//	is false if block == genesis
-	Blocker bool
-
-	//	block value for this cursor hash
-	Value *FondBlock
-}
-
-//	val getter 
-//	return current block chain iteration epoch
-func (iter *ChainIterator) Val () *FondBlock {
-	return iter.Value
-}
-
-//	makes new iterator for stepping the chain
-func (chain *FondChain) Iterator() *ChainIterator {
-	return &ChainIterator{
-		Db:     chain.Db,
-		Cursor: chain.TailHash,
-	}
-}
-
-//	return true while the iterator is at the middle block
-//	when iterator destinates the genesis it's false
-func (iter *ChainIterator) Step() bool {
-	var block *FondBlock
-
-	if iter.Blocker {
-		return false
-	}
-	
-	err := iter.Db.View(func(txn *badger.Txn) error {
-		tl, err := txn.Get(iter.Cursor)
-		Handle(
-			"getting current block",
-			err,
-		)
-
-		err = tl.Value(func(val []byte) error {
-			block = ToBlocker(val)
-			return nil
-		})
-
-		return err
-	})
-
-	Handle(
-		"getting block",
-		err,
+//	Hashes all txn in the block
+//	Determines pow logic part of the txn durability 
+func (block *FondBlock) HashTxn() []byte {
+	var (
+		buff [32]byte 
+		hMatrix [][]byte
 	)
 
-	//	setting block value 
-	iter.Value = block
-
-	if bytes.Equal(block.Data, genesis) {
-		iter.Blocker = true
-		return true
+	for _, tx := range block.Txn {
+		hMatrix = append(hMatrix, tx.Hash)
 	}
 
-	if !bytes.Equal(block.PrevHash, []byte{}) {
-		iter.Cursor = block.PrevHash
-		return true
+	buff = sha256.Sum256(bytes.Join(hMatrix, []byte{}))
+	return buff[:]
+}
+
+
+//	Bool status of existence db
+func DbExist(path string) bool {
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return false
 	}
 
-	return false
+	return true
+}
+
+
+//	Hash tx
+func (tx *Tx) SetHash() {
+	var hash [32]byte 
+	var buff bytes.Buffer
+
+	enc := gob.NewEncoder(&buff)
+	utils.Handle(
+		"encoding tx to bytes",
+		enc.Encode(tx),
+	)
+
+	hash = sha256.Sum256(buff.Bytes())
+	tx.Hash = hash[:]
+}
+
+
+//	Validate inTx on correct sign
+func (in *InTx) InValid(data string) bool {
+	return data == in.Sign
+}
+
+
+//	Validate outTx on correct pub-key
+func (out *OutTx) OutValid(data string) bool {
+	return data == out.PubKey
+}
+
+
+//	Check if the tx is coinbase 
+func (tx *Tx) IsCoinbase() bool {
+	i := tx.In[0]
+	return len(tx.In) == 1 && len(i.Ref) == 0 && i.RefIdx == -1 
+}
+
+
+//	Check is x < v
+func ForceLess(x, v int) bool {
+	return x < v
+}
+
+
+//	Check is x > v
+func ForceGreat(x, v int) bool {
+	return x > v
 }

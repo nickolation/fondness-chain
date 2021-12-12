@@ -1,30 +1,32 @@
 package cli
 
-import (
-	"log"
-
-	chain "github.com/nickolation/fondness-chain/blockchain/chaincore"
-)
+import "github.com/nickolation/fondness-chain/core/utils"
 
 type CliChain struct {
-	Chain *chain.FondChain
 }
 
-func InitCli(c *chain.FondChain) error {
-	cch := CliChain{
-		Chain: c,
-	}
+func InitCli() error {
+	cch := CliChain{}
 
-	cch.InitPrinter()
 	
-	err := cch.InitLinker()
-	if err != nil {
-		log.Printf(
-			"link add command - [%v]",
-			err,
-		)
-	}
+	cch.InitPrinter()
+	utils.Handle(
+		"balancer",
+		cch.InitBalancer(),
+	)
+
+	utils.Handle(
+		"lover",
+		cch.InitLover(),
+	)
+	
+	utils.Handle(
+		"creator",
+		cch.InitCreator(),
+	)
 
 	Execute()
-	return err
+
+	//	nil --> err
+	return nil
 }

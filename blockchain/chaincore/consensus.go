@@ -2,7 +2,7 @@ package chaincore
 
 import (
 	"bytes"
-	"crypto/rand"
+	//"crypto/rand"
 	"crypto/sha256"
 	"encoding/binary"
 	"log"
@@ -18,20 +18,23 @@ const (
 	difu  = uint(dif)
 
 	//	max value of randomiser
-	max = 12000
+	//max = 12000
 )
 
 type FondPow struct {
-	Source FondBlock
+	Source *FondBlock
 	Target *big.Int
 }
 
-func NewPow(b FondBlock) *FondPow {
+func Pow(b *FondBlock) *FondPow {
+	/*
 	tg, err := rand.Int(rand.Reader, big.NewInt(max))
 	Handle(
 		"error with generate random bigInt",
 		err,
-	)
+	) */
+
+	tg := big.NewInt(1)
 
 	tg.Lsh(tg, 256-difu)
 	log.Printf("target is  - [%x]", tg)
@@ -55,7 +58,7 @@ func (pow *FondPow) CalcHash(nonce int) []byte {
 	return bytes.Join(
 		[][]byte{
 			pow.Source.PrevHash,
-			pow.Source.Data,
+			pow.Source.HashTxn(),
 			n,
 			d,
 		},
@@ -87,8 +90,10 @@ func (pow *FondPow) Feel() ([]byte, int) {
 }
 
 //	validate hash on the target frame
-func (pow *FondPow) Validate(hash []byte) bool {
+func (pow *FondPow) Validate() bool {
 	var cmp big.Int
+
+	hash := pow.CalcHash(pow.Source.Nonce)
 	cmp.SetBytes(hash)
 
 	return cmp.Cmp(pow.Target) == -1

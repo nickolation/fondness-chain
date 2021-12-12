@@ -2,6 +2,7 @@ package chaincore
 
 import (
 	"log"
+	"runtime"
 
 	"github.com/dgraph-io/badger"
 )
@@ -9,54 +10,54 @@ import (
 //		[]byte --> ?
 var (
 	genesis = []byte("genesis")
-	Tail = []byte("tl")
+	Tail    = []byte("tl")
 
 	sourcePath = "./source/chain"
+
+	stdForce = 1000
 )
 
-//	main entitie of block is part of chain 
+//	main entitie of block is part of chain
 type FondBlock struct {
-	//		data --> tx
-	Data []byte 
-	
-	//	hash of this 
-	Hash []byte 
+	//	block transactions
+	Txn []Tx
 
-	PrevHash []byte 
+	//	hash of this
+	Hash []byte
+
+	PrevHash []byte
 
 	//	counter for pow functional
 	Nonce int
 }
 
 //	produce new block before the linking with chain
-func ProduceBlock(d, p []byte) FondBlock {
+func ProduceBlock(t []Tx, p []byte) FondBlock {
 	block := FondBlock{
-		Data: d,
+		Txn:      t,
 		PrevHash: p,
 	}
 
-	//	init temp 
-	pow := NewPow(block)
+	//	init temp
+	pow := Pow(&block)
 	h, n := pow.Feel()
 
-	block.Hash = h 
+	block.Hash = h
 	block.Nonce = n
 
 	return block
 }
 
-
-//	main etitie of chain 
+//	main etitie of chain
 type FondChain struct {
-	Db *badger.DB
+	Db       *badger.DB
 	TailHash []byte
-} 
-
+}
 
 //	init the block with data
-//	link new block with fondChain 
-func (chain *FondChain) LinkBlock(d []byte) {
-	var tailHash []byte 
+//	link new block with fondChain
+func (chain *FondChain) LinkBlock(t []Tx) {
+	var tailHash []byte
 
 	//	getting tail hash
 	err := chain.Db.View(func(txn *badger.Txn) error {
@@ -67,7 +68,7 @@ func (chain *FondChain) LinkBlock(d []byte) {
 		)
 
 		err = tl.Value(func(val []byte) error {
-			tailHash = val 
+			tailHash = val
 			return nil
 		})
 
@@ -84,14 +85,14 @@ func (chain *FondChain) LinkBlock(d []byte) {
 		err,
 	)
 
-	block := ProduceBlock(d, tailHash)
+	block := ProduceBlock(t, tailHash)
 
 	//	update chain - add new block and write tail to base
 	err = chain.Db.Update(func(txn *badger.Txn) error {
 		Handle(
 			"setting new block to base",
 			txn.Set(block.Hash, block.ToByter()),
-		) 
+		)
 
 		err = txn.Set(Tail, block.Hash)
 		Handle(
@@ -107,73 +108,110 @@ func (chain *FondChain) LinkBlock(d []byte) {
 	)
 }
 
+//	Generate the genesis block with coinbase tx
+func FondGenesis(coinbase Tx) *FondBlock {
+	block := ProduceBlock([]Tx{coinbase}, nil)
+	return &block
+}
 
-//	start fondchain with genesis block
-func StartChain() *FondChain {
-	var tailHash []byte 
+//	Validate block in the genesis parametrs
+func (block *FondBlock) IsGenesis() bool {
+	if block.PrevHash == nil && block.Txn[0].IsCoinbase() {
+		return true
+	}
+
+	return false
+}
+
+//		init chain with db
+func ExistChainStart(addr string) *FondChain {
+	if !DbExist(dbPath) {
+		log.Printf("Chain [db] isn't exist")
+		runtime.Goexit()
+	}
+
+	var tailHash []byte
 
 	opt := badger.DefaultOptions(sourcePath)
-
 	db, err := badger.Open(opt)
 	Handle(
 		"error with open the chain base",
 		err,
 	)
 
-	//	try to update db
-	err = db.Update(func(txn *badger.Txn) error {
-		if _, err := txn.Get(Tail); err == badger.ErrKeyNotFound {
-			log.Println("Fondness chain isn't exist")
+	err = db.View(func(txn *badger.Txn) error {
+		it, err := txn.Get(Tail)
+		Handle(
+			"getting the tail",
+			err,
+		)
 
-			gen := ProduceBlock(genesis, nil)
+		err = it.Value(func(val []byte) error {
+			tailHash = val
+			return nil
+		})
 
-			log.Printf("genesis is - [%v]", gen)
-			//	set genesis block
-			Handle(
-				"error with setting genesis block to base",
-				txn.Set(gen.Hash, gen.ToByter()),
-			)
-
-			//set tail
-			err = txn.Set(Tail, gen.Hash)
-			tailHash = gen.Hash
-
-			Handle(
-				"error with setting tail",
-				err,
-			)
-			return err
-
-		//	something is here
-		} else {
-			tl, err := txn.Get(Tail)
-			Handle(
-				"getting tail",
-				err,
-			)
-
-			Handle(
-				"getting tail value",
-				tl.Value(func(val []byte) error {
-					tailHash = val
-					return nil
-				}),
-			)
-			
-			return err
-		}
+		return err
 	})
 
 	Handle(
-		"updating base",
+		"getting the tail value",
 		err,
 	)
 
 	return &FondChain{
+		Db:       db,
 		TailHash: tailHash,
-		Db: db,
 	}
 }
 
+//		init chain without db
+func AbsentChainStart(addr string) *FondChain {
+	if DbExist(dbPath) {
+		log.Printf("Chain [db] is already exist")
+		runtime.Goexit()
+	}
 
+	var tailHash []byte
 
+	opt := badger.DefaultOptions(sourcePath)
+	db, err := badger.Open(opt)
+	Handle(
+		"error with open the chain base",
+		err,
+	)
+
+	err = db.Update(func(txn *badger.Txn) error {
+
+		cbsTx := CoinbaseTx(addr, string(genesis))
+		gen := FondGenesis(*cbsTx)
+
+		//	uncamp log
+		log.Printf("genesis is - [%v]", gen)
+
+		Handle(
+			"setting the tail",
+			txn.Set(Tail, gen.Hash),
+		)
+
+		err = txn.Set(gen.Hash, gen.ToByter())
+		Handle(
+			"setting the new block",
+			err,
+		)
+
+		tailHash = gen.Hash
+
+		return err
+	})
+
+	Handle(
+		"updating the chain",
+		err,
+	)
+
+	return &FondChain{
+		Db:       db,
+		TailHash: tailHash,
+	}
+}
