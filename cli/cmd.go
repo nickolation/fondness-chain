@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	//chain "github.com/nickolation/fondness-chain/blockchain/chaincore"
+	"github.com/nickolation/fondness-chain/blockchain/assets"
 	"github.com/nickolation/fondness-chain/blockchain/chaincore"
 	"github.com/nickolation/fondness-chain/core/utils"
 	"github.com/spf13/cobra"
@@ -15,16 +16,16 @@ var (
 //errNilTx = errors.New("nil tx")
 )
 
-func (cli *CliChain) InitPrinter() {
-	ch := chaincore.ExistChainStart("")
-
-	iter := ch.Iterator()
-
+//	Print the chain cmd
+func InitPrinter() {
 	cmd := &cobra.Command{
 		Use:   "print",
 		Short: "print chain blocks",
 		Long:  "...",
 		Run: func(cmd *cobra.Command, args []string) {
+			ch := chaincore.ExistChainStart("")
+			iter := ch.Iterator()
+
 			for iter.Step() {
 				val := iter.Val()
 
@@ -40,9 +41,59 @@ func (cli *CliChain) InitPrinter() {
 	CliRoot.AddCommand(cmd)
 }
 
+
+//	Generate new heart and write it to the memory. Log the address
+func InitHearter() {
+	cmd := &cobra.Command{
+		Use:   "heart",
+		Short: "feel the heart - create and connect to",
+		Long:  "...",
+		Run: func(cmd *cobra.Command, args []string) {
+			memory, err := assets.AccesMemory()
+			utils.Handle(
+				"hearter err", 
+				err,
+			)
+
+			addr := memory.LinkHeart()
+			memory.WriteMemory() 
+			fmt.Printf("Address of heart is - [%s]\n", addr)
+		},
+	}
+
+	CliRoot.AddCommand(cmd)
+}
+
+
+//	Print the list of the address nodes in the memory cmd 
+func InitLister() {
+	cmd := &cobra.Command{
+		Use:   "listaddr",
+		Short: "list of all heart adresses in the memory",
+		Long:  "...",
+		Run: func(cmd *cobra.Command, args []string) {
+			memory, err := assets.AccesMemory()
+			utils.Handle(
+				"hearter err", 
+				err,
+			)
+
+			list := memory.GetAddrs()
+			for i, l := range list {
+				fmt.Printf("Adress [%d] - [%s]\n", i , l)
+			}
+		},
+	}
+
+	CliRoot.AddCommand(cmd)
+}
+
+
 var createAddr string
 
-func (cli *CliChain) InitCreator() error {
+
+//	Create new chain cmd 
+func InitCreator() error {
 	cmd := &cobra.Command{
 		Use:   "create",
 		Short: "create a new fondness chain object at this addr",
@@ -65,9 +116,11 @@ func (cli *CliChain) InitCreator() error {
 	return err
 }
 
+
 var balanceAddr string
 
-func (cli *CliChain) InitBalancer() error {
+//	Get balance by addr cmd 
+func InitBalancer() error {
 	cmd := &cobra.Command{
 		Use:   "fondness",
 		Short: "print the level of fondness by this node address",
@@ -94,14 +147,19 @@ func (cli *CliChain) InitBalancer() error {
 	return err
 }
 
+
 var (
+	//	sender Node address
 	fromAddr string
+	//	getter Node address
 	toAddr   string
 
+	//	amount of fondness 
 	force int
 )
 
-func (cli *CliChain) InitLover() error {
+//	Send fondness to the addr from loving cmd.
+func InitLover() error {
 	cmd := &cobra.Command{
 		Use:   "love",
 		Short: "send fondness from [Node] to [Node]",
@@ -141,7 +199,7 @@ func (cli *CliChain) InitLover() error {
 	)
 
 	cmd.Flags().IntVarP(
-		&force, "force", "frc", 0,
+		&force, "force", "r", 0,
 		"Force [Loving] - [Loving]",
 	)
 
@@ -166,4 +224,27 @@ func (cli *CliChain) InitLover() error {
 	CliRoot.AddCommand(cmd)
 
 	return err
+}
+
+
+func init() {
+	//	commands with the error returning 
+	utils.Handle(
+		"creator",
+		InitCreator(),
+	)
+
+	utils.Handle(
+		"lover",
+		InitLover(),
+	)
+	utils.Handle(
+		"balancer",
+		InitBalancer(),
+	)
+
+	//	unerrors commands
+	InitPrinter()
+	InitHearter()
+	InitLister()
 }

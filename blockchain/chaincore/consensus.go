@@ -80,9 +80,10 @@ func (pow *FondPow) Feel() ([]byte, int) {
 		bHash.SetBytes(hash[:])
 
 		if bHash.Cmp(pow.Target) == -1 {
-			break
+				break
+		} else {
+				nonce++
 		}
-		nonce++
 	}
 
 	log.Printf("Nonce is - [%d]", nonce)
@@ -93,8 +94,10 @@ func (pow *FondPow) Feel() ([]byte, int) {
 func (pow *FondPow) Validate() bool {
 	var cmp big.Int
 
-	hash := pow.CalcHash(pow.Source.Nonce)
-	cmp.SetBytes(hash)
+	b := pow.CalcHash(pow.Source.Nonce)
+	hash := sha256.Sum256(b)
+
+	cmp.SetBytes(hash[:])
 
 	return cmp.Cmp(pow.Target) == -1
 }
