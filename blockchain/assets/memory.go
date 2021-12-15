@@ -118,5 +118,5 @@ func (mem *Memory) GetAddrs() []string {
 		addrs = append(addrs, addr)
 	}
 
-	return addrs
+	return addrs	
 }

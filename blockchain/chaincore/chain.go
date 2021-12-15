@@ -1,10 +1,12 @@
 package chaincore
 
 import (
+	"errors"
 	"log"
 	"runtime"
 
 	"github.com/dgraph-io/badger"
+	"github.com/nickolation/fondness-chain/core/utils"
 )
 
 //		[]byte --> ?
@@ -15,6 +17,10 @@ var (
 	sourcePath = "./source/chain"
 
 	stdForce = 1000
+)
+
+var (
+	errUnverTx = errors.New("txn isn't verified")
 )
 
 //	main entitie of block is part of chain
@@ -34,8 +40,10 @@ type FondBlock struct {
 //	produce new block before the linking with chain
 func ProduceBlock(t []Tx, p []byte) FondBlock {
 	block := FondBlock{
+		Hash:     []byte{},
 		Txn:      t,
 		PrevHash: p,
+		Nonce:    0,
 	}
 
 	//	init temp
@@ -56,13 +64,22 @@ type FondChain struct {
 
 //	init the block with data
 //	link new block with fondChain
-func (chain *FondChain) LinkBlock(t []Tx) {
+func (chain *FondChain) LinkBlock(txn []Tx) {
 	var tailHash []byte
+
+	for _, tx := range txn {
+		if !chain.VefifyTX(&tx) {
+			utils.FHandle(
+				"unverified tx - link is locked",
+				errUnverTx,
+			)
+		}
+	}
 
 	//	getting tail hash
 	err := chain.Db.View(func(txn *badger.Txn) error {
 		tl, err := txn.Get(Tail)
-		Handle(
+		utils.FHandle(
 			"getting tail",
 			err,
 		)
@@ -72,7 +89,7 @@ func (chain *FondChain) LinkBlock(t []Tx) {
 			return nil
 		})
 
-		Handle(
+		utils.FHandle(
 			"getting tail value",
 			err,
 		)
@@ -85,7 +102,7 @@ func (chain *FondChain) LinkBlock(t []Tx) {
 		err,
 	)
 
-	block := ProduceBlock(t, tailHash)
+	block := ProduceBlock(txn, tailHash)
 
 	//	update chain - add new block and write tail to base
 	err = chain.Db.Update(func(txn *badger.Txn) error {
@@ -110,7 +127,7 @@ func (chain *FondChain) LinkBlock(t []Tx) {
 
 //	Generate the genesis block with coinbase tx
 func FondGenesis(coinbase Tx) *FondBlock {
-	block := ProduceBlock([]Tx{coinbase}, nil)
+	block := ProduceBlock([]Tx{coinbase}, []byte{})
 	return &block
 }
 
@@ -185,9 +202,6 @@ func AbsentChainStart(addr string) *FondChain {
 
 		cbsTx := CoinbaseTx(addr, string(genesis))
 		gen := FondGenesis(*cbsTx)
-
-		//	uncamp log
-		log.Printf("genesis is - [%v]", gen)
 
 		Handle(
 			"setting the tail",

@@ -24,7 +24,7 @@ type ChainIterator struct {
 
 //	Block-getter 
 //	Return current block chain iteration epoch
-func (iter *ChainIterator) Val () *FondBlock {
+func (iter *ChainIterator) Block () *FondBlock {
 	return iter.Value
 }
 

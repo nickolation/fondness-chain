@@ -27,12 +27,19 @@ func InitPrinter() {
 			iter := ch.Iterator()
 
 			for iter.Step() {
-				val := iter.Val()
+				block := iter.Block()
+				txn := iter.Txn()
 
-				pow := chaincore.Pow(val)
-				fmt.Printf("Prev hash: [%x] \n", val.PrevHash)
-				fmt.Printf("Hash: [%x] \n", val.Hash)
-				fmt.Printf("Pow valid - [%s]\n\n", strconv.FormatBool(pow.Validate()))
+				pow := chaincore.Pow(block)
+
+				//	print info about blocks
+				fmt.Println(block)
+				fmt.Printf("  Pow valid - [%s]\n\n", strconv.FormatBool(pow.Validate()))
+
+				//	print info about tx
+				for _, tx := range txn {
+					fmt.Println(tx)
+				}
 				//		Pow section
 			}
 		},
@@ -40,7 +47,6 @@ func InitPrinter() {
 
 	CliRoot.AddCommand(cmd)
 }
-
 
 //	Generate new heart and write it to the memory. Log the address
 func InitHearter() {
@@ -51,12 +57,12 @@ func InitHearter() {
 		Run: func(cmd *cobra.Command, args []string) {
 			memory, err := assets.AccesMemory()
 			utils.Handle(
-				"hearter err", 
+				"hearter err",
 				err,
 			)
 
 			addr := memory.LinkHeart()
-			memory.WriteMemory() 
+			memory.WriteMemory()
 			fmt.Printf("Address of heart is - [%s]\n", addr)
 		},
 	}
@@ -64,8 +70,7 @@ func InitHearter() {
 	CliRoot.AddCommand(cmd)
 }
 
-
-//	Print the list of the address nodes in the memory cmd 
+//	Print the list of the address nodes in the memory cmd
 func InitLister() {
 	cmd := &cobra.Command{
 		Use:   "listaddr",
@@ -74,13 +79,13 @@ func InitLister() {
 		Run: func(cmd *cobra.Command, args []string) {
 			memory, err := assets.AccesMemory()
 			utils.Handle(
-				"hearter err", 
+				"hearter err",
 				err,
 			)
 
 			list := memory.GetAddrs()
 			for i, l := range list {
-				fmt.Printf("Adress [%d] - [%s]\n", i , l)
+				fmt.Printf("Adress [%d] - [%s]\n", i, l)
 			}
 		},
 	}
@@ -88,11 +93,9 @@ func InitLister() {
 	CliRoot.AddCommand(cmd)
 }
 
-
 var createAddr string
 
-
-//	Create new chain cmd 
+//	Create new chain cmd
 func InitCreator() error {
 	cmd := &cobra.Command{
 		Use:   "create",
@@ -116,10 +119,9 @@ func InitCreator() error {
 	return err
 }
 
-
 var balanceAddr string
 
-//	Get balance by addr cmd 
+//	Get balance by addr cmd
 func InitBalancer() error {
 	cmd := &cobra.Command{
 		Use:   "fondness",
@@ -129,7 +131,7 @@ func InitBalancer() error {
 			ch := chaincore.ExistChainStart(balanceAddr)
 
 			fmt.Printf(
-				"Fondness of loving by addr [%s] - [%d]\n",
+				"\nFondness of loving by addr [%s] - [%d]\n",
 				balanceAddr,
 				ch.GetFondness(balanceAddr),
 			)
@@ -147,14 +149,13 @@ func InitBalancer() error {
 	return err
 }
 
-
 var (
 	//	sender Node address
 	fromAddr string
 	//	getter Node address
-	toAddr   string
+	toAddr string
 
-	//	amount of fondness 
+	//	amount of fondness
 	force int
 )
 
@@ -165,22 +166,25 @@ func InitLover() error {
 		Short: "send fondness from [Node] to [Node]",
 		Long:  "...",
 		Run: func(cmd *cobra.Command, args []string) {
+			if !assets.ValidateAddr(toAddr) || !assets.ValidateAddr(fromAddr) {
+				log.Fatal("address isn't valid")
+			}
+
 			ch := chaincore.ExistChainStart(fromAddr)
+			defer ch.Db.Close()
 
 			tx, err := ch.ProduceTx(fromAddr, toAddr, force)
 			utils.Handle(
 				"produce tx",
 				err,
 			)
-			log.Printf("Tx is - [%v]", tx)
 
 			if tx != nil {
 				ch.LinkBlock([]chaincore.Tx{*tx})
-				fmt.Printf("CMD: tx isn't nil - [%v]\n", tx)
 			}
 
 			fmt.Printf(
-				"Tx is success! Fondness send from [%s]\n to - [%s]\n - in force [%d]\n",
+				"\nTx is success! Fondness send\n[from] - [%s]\n[to] - [%s]\nin force - [%d]\n\n",
 				fromAddr,
 				toAddr,
 				force,
@@ -226,9 +230,8 @@ func InitLover() error {
 	return err
 }
 
-
 func init() {
-	//	commands with the error returning 
+	//	commands with the error returning
 	utils.Handle(
 		"creator",
 		InitCreator(),

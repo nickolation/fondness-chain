@@ -2,12 +2,23 @@ package chaincore
 
 import (
 	"bytes"
+	"errors"
+
 	//"crypto/rand"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/binary"
-	"log"
+	"encoding/hex"
 	"math"
 	"math/big"
+
+	"github.com/nickolation/fondness-chain/core/utils"
+)
+
+var (
+	errNilTx = errors.New("nil tx in mapTXs")
 )
 
 //	difficulty of the hash calculating
@@ -28,16 +39,16 @@ type FondPow struct {
 
 func Pow(b *FondBlock) *FondPow {
 	/*
-	tg, err := rand.Int(rand.Reader, big.NewInt(max))
-	Handle(
-		"error with generate random bigInt",
-		err,
-	) */
+		tg, err := rand.Int(rand.Reader, big.NewInt(max))
+		Handle(
+			"error with generate random bigInt",
+			err,
+		) */
 
 	tg := big.NewInt(1)
 
 	tg.Lsh(tg, 256-difu)
-	log.Printf("target is  - [%x]", tg)
+	//log.Printf("target is  - [%x]", tg)
 
 	return &FondPow{
 		Source: b,
@@ -80,13 +91,12 @@ func (pow *FondPow) Feel() ([]byte, int) {
 		bHash.SetBytes(hash[:])
 
 		if bHash.Cmp(pow.Target) == -1 {
-				break
+			break
 		} else {
-				nonce++
+			nonce++
 		}
 	}
 
-	log.Printf("Nonce is - [%d]", nonce)
 	return hash[:], nonce
 }
 
@@ -112,4 +122,100 @@ func Hex(num int64) ([]byte, error) {
 	}
 
 	return buff.Bytes(), nil
+}
+
+//	Sign all inTx of this tx by privKey
+func (tx *Tx) Sign(privKey ecdsa.PrivateKey, mapTXs map[string]Tx) {
+	if tx.IsCoinbase() {
+		return
+	}
+
+	for _, in := range tx.In {
+		if mapTXs[hex.EncodeToString(in.Ref)].Hash == nil {
+			utils.FLog(
+				"nil tx in mapTXs",
+				errNilTx,
+			)
+		}
+	}
+
+	unsTx := tx.UnsignedTx()
+
+	for id, in := range unsTx.In {
+		refTx := mapTXs[hex.EncodeToString(in.Ref)]
+
+		//	???
+		unsTx.In[id].Sign = nil
+		unsTx.In[id].PubKey = refTx.Out[in.RefIdx].PubHash
+
+		unsTx.Hash = unsTx.ToHash()
+		unsTx.In[id].PubKey = nil
+
+		r, s, err := ecdsa.Sign(rand.Reader, &privKey, unsTx.Hash)
+		Handle(
+			"sign unsigned tx hash",
+			err,
+		)
+
+		sign := append(r.Bytes(), s.Bytes()...)
+		tx.In[id].Sign = sign
+	}
+}
+
+//	Verify tx pubKey on pubKey and signature correction
+func (tx *Tx) Verify(mapTXs map[string]Tx) bool {
+	if tx.IsCoinbase() {
+		return true
+	}
+
+	for _, in := range tx.In {
+		if mapTXs[hex.EncodeToString(in.Ref)].Hash == nil {
+			utils.FLog(
+				"nil tx in mapTXs",
+				errNilTx,
+			)
+		}
+	}
+
+	unsTx := tx.UnsignedTx()
+	curve := elliptic.P256()
+
+	for id, in := range tx.In {
+		refTx := mapTXs[hex.EncodeToString(in.Ref)]
+		unsTx.In[id].Sign = nil
+
+		unsTx.In[id].PubKey = refTx.Out[in.RefIdx].PubHash
+		unsTx.Hash = unsTx.ToHash()
+		unsTx.In[id].PubKey = nil
+
+		var (
+			r = big.Int{}
+			s = big.Int{}
+		)
+
+		sCoord := len(in.Sign) / 2
+
+		r.SetBytes(in.Sign[:(sCoord)])
+		s.SetBytes(in.Sign[sCoord:])
+
+		var (
+			x = big.Int{}
+			y = big.Int{}
+		)
+
+		kCoord := len(in.PubKey) / 2
+		x.SetBytes(in.PubKey[:kCoord])
+		y.SetBytes(in.PubKey[kCoord:])
+
+		pubKey := ecdsa.PublicKey{
+			Curve: curve,
+			X: &x,
+			Y: &y,
+		}
+		if !ecdsa.Verify(&pubKey, unsTx.Hash, &r, &s) {
+			return false
+		}
+	}
+
+	return true
 }

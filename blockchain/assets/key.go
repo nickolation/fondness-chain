@@ -11,7 +11,7 @@ import (
 
 //	Wrap of the private key with elliptic key is inside 
 type PrivateKey struct {
-	Key *ecdsa.PrivateKey 
+	Key ecdsa.PrivateKey 
 }
 
 
@@ -34,7 +34,7 @@ func NewKeys() (PrivateKey, PublicKey) {
 	pub := append(priv.PublicKey.X.Bytes(), priv.Y.Bytes()...)
 
 	pr := PrivateKey{
-		Key: priv,
+		Key: *priv,
 	}
 
 	pb := PublicKey{
