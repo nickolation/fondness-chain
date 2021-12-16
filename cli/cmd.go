@@ -229,9 +229,11 @@ func InitLover() error {
 				err,
 			)
 
+			//	Generate the new tx with coinbase to the miner - sender
+			cbs := chaincore.CoinbaseTx(fromAddr, "")
 			block := &chaincore.FondBlock{}
 			if tx != nil {
-				block = chain.LinkBlock([]chaincore.Tx{*tx})
+				block = chain.LinkBlock([]chaincore.Tx{*cbs, *tx})
 			}
 
 			set.Refresh(block)

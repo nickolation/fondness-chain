@@ -52,17 +52,17 @@ func ToBlocker(s []byte) *FondBlock {
 //	Hashes all txn in the block
 //	Determines pow logic part of the txn durability
 func (block *FondBlock) HashTxn() []byte {
-	var (
-		buff    [32]byte
-		hMatrix [][]byte
-	)
+	var hMatrix [][]byte
 
 	for _, tx := range block.Txn {
-		hMatrix = append(hMatrix, tx.ToHash())
+		hMatrix = append(hMatrix, tx.ToByte())
 	}
 
-	buff = sha256.Sum256(bytes.Join(hMatrix, []byte{}))
-	return buff[:]
+	//	hash by tree
+	tree := GrownMerkleTree(hMatrix)
+	
+	//	root is unic hash data of txn in this block 
+	return tree.RootNode.Data
 }
 
 //	Tx to byte serialization
