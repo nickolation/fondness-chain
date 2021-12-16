@@ -87,21 +87,6 @@ func DbExist(path string) bool {
 	return true
 }
 
-//	Hash tx
-func (tx *Tx) SetHash() {
-	var hash [32]byte
-	var buff bytes.Buffer
-
-	enc := gob.NewEncoder(&buff)
-	utils.Handle(
-		"encoding tx to bytes",
-		enc.Encode(tx),
-	)
-
-	hash = sha256.Sum256(buff.Bytes())
-	tx.Hash = hash[:]
-}
-
 //	Hash tx without the unic Hash
 func (tx *Tx) ToHash() []byte {
 	var hash [32]byte
@@ -176,3 +161,34 @@ func ForceLess(x, v int) bool {
 func ForceGreat(x, v int) bool {
 	return x > v
 }
+
+//	Serialize txoset to the byte
+func (xoset TXOSet) ToByte() []byte {
+	var buff bytes.Buffer
+
+	enc := gob.NewEncoder(&buff)
+	utils.FHandle(
+		"xoset to byte",
+		enc.Encode(xoset),
+	)
+
+	return buff.Bytes()
+}
+
+//	Derialize the byte to the txoset ob
+func ToTXOSet(ser []byte) TXOSet {
+	var xoset TXOSet
+
+	dec := gob.NewDecoder(bytes.NewReader(ser))
+	utils.FHandle(
+		"xoset to byte",
+		dec.Decode(&xoset),
+	)
+
+	return xoset
+}
+
+
+
+
+

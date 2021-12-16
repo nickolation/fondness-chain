@@ -3,15 +3,18 @@ package chaincore
 import (
 	"bytes"
 	"crypto/ecdsa"
+	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"log"
 
 	"github.com/nickolation/fondness-chain/blockchain/assets"
+	"github.com/nickolation/fondness-chain/core/utils"
 )
 
 var (
-	errForce = errors.New("force isn't enouth")
+	errForce    = errors.New("force isn't enouth")
 	errEmptyTxn = errors.New("nil txn list")
 )
 
@@ -49,7 +52,7 @@ type OutTx struct {
 //	Generate the new txo by addr
 func ProduceTXO(val int, addr string) *OutTx {
 	tx := &OutTx{
-		Force:      val,
+		Force:   val,
 		PubHash: nil,
 	}
 
@@ -60,10 +63,19 @@ func ProduceTXO(val int, addr string) *OutTx {
 
 //	Generate new coinbase tx
 //	Contains the only inIx wich isn't referenced to another out
-func CoinbaseTx(addr, data string) *Tx {
-	if data == "" {
+func CoinbaseTx(addr, info string) *Tx {
+	buf := make([]byte, 20)
+	if info == "" {
+		_, err := rand.Read(buf)
+		utils.FHandle(
+			"rand data generation for genesis",
+			err,
+		)
+		//	??
 		log.Printf("Fondness to - [%s]", addr)
 	}
+
+	data := fmt.Sprintf("[%x]", buf)
 
 	in := InTx{
 		Ref:    []byte{},
@@ -82,13 +94,13 @@ func CoinbaseTx(addr, data string) *Tx {
 		In:  []InTx{in},
 		Out: []OutTx{out},
 	}
-	tx.SetHash()
+	tx.Hash = tx.ToHash()
 
 	return tx
 }
 
 //	Makes new tx from to with amount-level
-func (chain *FondChain) ProduceTx(from, to string, level int) (*Tx, error) {
+func (uxoset *UTXOSet) ProduceTx(from, to string, level int) (*Tx, error) {
 	var (
 		in  []InTx
 		out []OutTx
@@ -100,14 +112,13 @@ func (chain *FondChain) ProduceTx(from, to string, level int) (*Tx, error) {
 		err,
 	)
 
-
 	h := mem.GetHeart(from)
 
 	pubKey := h.PubKey.Key
 	privKey := h.PrivKey.Key
 
 	pubHash := assets.PubHash(pubKey)
-	sum, freeOut := chain.FondUTXO(pubHash, level)
+	sum, freeOut := uxoset.FondableUTXO(pubHash, level)
 
 	if ForceLess(sum, level) {
 		Handle(
@@ -127,7 +138,7 @@ func (chain *FondChain) ProduceTx(from, to string, level int) (*Tx, error) {
 	//	Generate balance/change out
 	if ForceGreat(sum, level) {
 		out = append(out, *ProduceTXO(
-			sum - level,
+			sum-level,
 			from,
 		))
 	}
@@ -153,20 +164,19 @@ func (chain *FondChain) ProduceTx(from, to string, level int) (*Tx, error) {
 		In:  in,
 		Out: out,
 	}
-	tx.Hash = tx.ToHash() 
-	chain.SignTX(&tx, privKey)
+	tx.Hash = tx.ToHash()
+	uxoset.Chain.SignTX(&tx, privKey)
 
 	return &tx, nil
 }
 
-
 //	Find tx by this hash. If isn't exist it returns empty Tx and err.
 func (chain *FondChain) FindTX(hash []byte) (Tx, error) {
-	iter := chain.Iterator() 
+	iter := chain.Iterator()
 
 	for iter.Step() {
 		txn := iter.Txn()
-		
+
 		for _, tx := range txn {
 			if bytes.Equal(tx.Hash, hash) {
 				return tx, nil
@@ -177,11 +187,9 @@ func (chain *FondChain) FindTX(hash []byte) (Tx, error) {
 	return Tx{}, errEmptyTxn
 }
 
-
 //	Chain wrapper under the tx sign
-func (chain *FondChain) SignTX(tx *Tx, privKey ecdsa.PrivateKey)  {
+func (chain *FondChain) SignTX(tx *Tx, privKey ecdsa.PrivateKey) {
 	mapTXs := make(map[string]Tx)
-
 
 	for _, in := range tx.In {
 		refTx, err := chain.FindTX(in.Ref)
@@ -196,11 +204,14 @@ func (chain *FondChain) SignTX(tx *Tx, privKey ecdsa.PrivateKey)  {
 	tx.Sign(privKey, mapTXs)
 }
 
-
-//	Chain wrapper under the tx verify 
+//	Chain wrapper under the tx verify
 func (chain *FondChain) VefifyTX(tx *Tx) bool {
-	mapTXs := make(map[string]Tx)
+	//	cbs is simply verified
+	if tx.IsCoinbase() {
+		return true
+	}
 
+	mapTXs := make(map[string]Tx)
 
 	for _, in := range tx.In {
 		refTx, err := chain.FindTX(in.Ref)

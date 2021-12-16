@@ -21,19 +21,16 @@ type ChainIterator struct {
 	Value *FondBlock
 }
 
-
-//	Block-getter 
+//	Block-getter
 //	Return current block chain iteration epoch
-func (iter *ChainIterator) Block () *FondBlock {
+func (iter *ChainIterator) Block() *FondBlock {
 	return iter.Value
 }
 
-
 //	Txn-getter
-func (iter *ChainIterator) Txn () []Tx {
+func (iter *ChainIterator) Txn() []Tx {
 	return iter.Value.Txn
 }
-
 
 //	Makes new iterator for stepping the chain
 func (chain *FondChain) Iterator() *ChainIterator {
@@ -43,7 +40,6 @@ func (chain *FondChain) Iterator() *ChainIterator {
 	}
 }
 
-
 //	Return true while the iterator is at the middle block
 //	When iterator destinates the genesis it's false
 func (iter *ChainIterator) Step() bool {
@@ -52,7 +48,7 @@ func (iter *ChainIterator) Step() bool {
 	if iter.Blocker {
 		return false
 	}
-	
+
 	err := iter.Db.View(func(txn *badger.Txn) error {
 		tl, err := txn.Get(iter.Cursor)
 		Handle(
@@ -73,7 +69,7 @@ func (iter *ChainIterator) Step() bool {
 		err,
 	)
 
-	//	setting block value 
+	//	setting block value
 	iter.Value = block
 
 	if block.IsGenesis() {
@@ -87,4 +83,43 @@ func (iter *ChainIterator) Step() bool {
 	}
 
 	return false
+}
+
+//	Iterator object for the iterating keys in badger db.
+//	Ctr is auto incrementing in the time pushing to the keys
+type KeysIterator struct {
+	//	Prefixed hash-tx key matrix
+	Keys [][]byte
+
+	//	Iterator's switcher
+	Ctr int
+}
+
+//	Keys host constructor
+func KeysIter() *KeysIterator {
+	return &KeysIterator{
+		Keys: make([][]byte, 0, utxosetSize),
+	}
+}
+
+//	Push the key in the keys storage.
+func (host *KeysIterator) Push(key []byte) {
+	host.Keys = append(host.Keys, key)
+	host.Ctr++
+}
+
+//	Validation on the finish point destination
+func (host *KeysIterator) IsFinished() bool {
+	return host.Ctr == utxosetSize
+}
+
+//	Validation on the permission to delete the prefixed keys
+func (host *KeysIterator) IsFree() bool {
+	return host.Ctr > 0
+}
+
+//	Reconstuct of the iterator with zero-value fields
+func (host *KeysIterator) Vanish() {
+	host.Keys = make([][]byte, 0, utxosetSize)
+	host.Ctr = 0
 }

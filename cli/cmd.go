@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"strconv"
@@ -13,8 +14,35 @@ import (
 )
 
 var (
-//errNilTx = errors.New("nil tx")
+	//errNilTx = errors.New("nil tx")
+
+	errInvalidAddr = errors.New("invalid addr - cmd is locked")
 )
+
+//	Print the chain cmd
+func InitIndexer() {
+	cmd := &cobra.Command{
+		Use:   "index",
+		Short: "index utxo set",
+		Long:  "...",
+		Run: func(cmd *cobra.Command, args []string) {
+			chain := chaincore.ExistChainStart("")
+			defer chain.Db.Close()
+
+			set := chaincore.UTXOSet{
+				Chain: chain,
+			}
+
+			//	indexing the utxo set
+			set.Index()
+
+			ctr := set.CountUTX()
+			fmt.Printf("UTXO Set is indexed! There are the [%v] utx\n", ctr)
+		},
+	}
+
+	CliRoot.AddCommand(cmd)
+}
 
 //	Print the chain cmd
 func InitPrinter() {
@@ -102,8 +130,13 @@ func InitCreator() error {
 		Short: "create a new fondness chain object at this addr",
 		Long:  "...",
 		Run: func(cmd *cobra.Command, args []string) {
-			chaincore.AbsentChainStart(createAddr)
+			chain := chaincore.AbsentChainStart(createAddr)
+			defer chain.Db.Close()
 
+			set := chaincore.UTXOSet{
+				Chain: chain,
+			}
+			set.Index()
 			fmt.Println("Fondness chain is created!")
 		},
 	}
@@ -128,12 +161,25 @@ func InitBalancer() error {
 		Short: "print the level of fondness by this node address",
 		Long:  "...",
 		Run: func(cmd *cobra.Command, args []string) {
-			ch := chaincore.ExistChainStart(balanceAddr)
+			if !assets.ValidateAddr(balanceAddr) {
+				utils.FHandle(
+					"CMD",
+					errInvalidAddr,
+				)
+			}
+
+			chain := chaincore.ExistChainStart(balanceAddr)
+			defer chain.Db.Close() 
+
+			set := chaincore.UTXOSet{
+				Chain: chain,
+			}
+
 
 			fmt.Printf(
 				"\nFondness of loving by addr [%s] - [%d]\n",
 				balanceAddr,
-				ch.GetFondness(balanceAddr),
+				set.GetFondness(balanceAddr),
 			)
 		},
 	}
@@ -167,21 +213,28 @@ func InitLover() error {
 		Long:  "...",
 		Run: func(cmd *cobra.Command, args []string) {
 			if !assets.ValidateAddr(toAddr) || !assets.ValidateAddr(fromAddr) {
-				log.Fatal("address isn't valid")
+				log.Fatal("addresses isn't valid")
 			}
 
-			ch := chaincore.ExistChainStart(fromAddr)
-			defer ch.Db.Close()
+			chain := chaincore.ExistChainStart(fromAddr)
+			defer chain.Db.Close()
 
-			tx, err := ch.ProduceTx(fromAddr, toAddr, force)
+			set := chaincore.UTXOSet{
+				Chain: chain,
+			}
+
+			tx, err := set.ProduceTx(fromAddr, toAddr, force)
 			utils.Handle(
 				"produce tx",
 				err,
 			)
 
+			block := &chaincore.FondBlock{}
 			if tx != nil {
-				ch.LinkBlock([]chaincore.Tx{*tx})
+				block = chain.LinkBlock([]chaincore.Tx{*tx})
 			}
+
+			set.Refresh(block)
 
 			fmt.Printf(
 				"\nTx is success! Fondness send\n[from] - [%s]\n[to] - [%s]\nin force - [%d]\n\n",
@@ -250,4 +303,5 @@ func init() {
 	InitPrinter()
 	InitHearter()
 	InitLister()
+	InitIndexer()
 }

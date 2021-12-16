@@ -1,6 +1,7 @@
 package chaincore
 
 import (
+	"encoding/hex"
 	"errors"
 	"log"
 	"runtime"
@@ -9,9 +10,8 @@ import (
 	"github.com/nickolation/fondness-chain/core/utils"
 )
 
-//		[]byte --> ?
+
 var (
-	genesis = []byte("genesis")
 	Tail    = []byte("tl")
 
 	sourcePath = "./source/chain"
@@ -64,7 +64,7 @@ type FondChain struct {
 
 //	init the block with data
 //	link new block with fondChain
-func (chain *FondChain) LinkBlock(txn []Tx) {
+func (chain *FondChain) LinkBlock(txn []Tx) *FondBlock {
 	var tailHash []byte
 
 	for _, tx := range txn {
@@ -123,6 +123,8 @@ func (chain *FondChain) LinkBlock(txn []Tx) {
 		"updating chain - add new block",
 		err,
 	)
+
+	return &block
 }
 
 //	Generate the genesis block with coinbase tx
@@ -200,7 +202,7 @@ func AbsentChainStart(addr string) *FondChain {
 
 	err = db.Update(func(txn *badger.Txn) error {
 
-		cbsTx := CoinbaseTx(addr, string(genesis))
+		cbsTx := CoinbaseTx(addr, "")
 		gen := FondGenesis(*cbsTx)
 
 		Handle(
@@ -228,4 +230,51 @@ func AbsentChainStart(addr string) *FondChain {
 		Db:       db,
 		TailHash: tailHash,
 	}
+}
+
+
+//	Iterates the chain and founds all utx - utxo map elements.
+//	Veiws it in the map [hash] - []OutTx sort	 
+func (chain *FondChain) ViewUTXO() map[string]TXOSet {
+	//	mapping the parent tx hash and txoSet - slie of outs
+	utxo := make(map[string]TXOSet)
+	//	spent tx
+	stx := make(map[string][]int) 
+
+	iter := chain.Iterator() 
+	for iter.Step() {
+		txn := iter.Txn() 
+
+		for _, tx := range txn {
+			txHash := hex.EncodeToString(tx.Hash)
+
+		Out:
+			//	check outId of current tx to spent by map of spentable idx
+			for outIdx, out := range tx.Out {
+				if stx[txHash] != nil {
+					for _, sId := range stx[txHash] {
+						if sId == outIdx {
+							continue Out
+						}
+					}
+				}
+				
+				//	appending the out slice to map by hash of parent tx
+				outs := utxo[txHash]
+				outs.Outs = append(outs.Outs, out)
+				utxo[txHash] = outs
+			}
+
+			//	search spentable tx
+			//	coinbase isn't valid for stx map appending
+			if !tx.IsCoinbase() {
+				for _, in := range tx.In {
+					rTxHash := hex.EncodeToString(in.Ref)
+					stx[rTxHash] = append(stx[rTxHash], in.RefIdx)
+				}
+			}
+		}
+	}
+
+	return utxo
 }
