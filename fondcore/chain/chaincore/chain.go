@@ -7,7 +7,7 @@ import (
 	"runtime"
 
 	"github.com/dgraph-io/badger"
-	"github.com/nickolation/fondness-chain/core/utils"
+	"github.com/nickolation/fondness-chain/fondcore/utils"
 )
 
 
@@ -61,6 +61,12 @@ type FondChain struct {
 	Db       *badger.DB
 	TailHash []byte
 }
+
+
+func (chain *FondChain) MaxSize() int {
+	return 0
+}
+
 
 //	init the block with data
 //	link new block with fondChain

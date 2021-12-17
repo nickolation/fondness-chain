@@ -7,8 +7,8 @@ import (
 	"log"
 	"os"
 
-	"github.com/nickolation/fondness-chain/blockchain/assets"
-	"github.com/nickolation/fondness-chain/core/utils"
+	"github.com/nickolation/fondness-chain/fondcore/chain/assets"
+	"github.com/nickolation/fondness-chain/fondcore/utils"
 )
 
 const (
@@ -76,6 +76,12 @@ func (tx *Tx) ToByte() []byte {
 	)
 
 	return buf.Bytes()
+}
+
+
+//	next logic 
+func ToTX(buff []byte) Tx {
+	return Tx{}
 }
 
 //	Bool status of existence db

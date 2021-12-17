@@ -14,7 +14,7 @@ import (
 	"math"
 	"math/big"
 
-	"github.com/nickolation/fondness-chain/core/utils"
+	"github.com/nickolation/fondness-chain/fondcore/utils"
 )
 
 var (

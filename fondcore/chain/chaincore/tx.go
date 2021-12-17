@@ -9,8 +9,8 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/nickolation/fondness-chain/blockchain/assets"
-	"github.com/nickolation/fondness-chain/core/utils"
+	"github.com/nickolation/fondness-chain/fondcore/chain/assets"
+	"github.com/nickolation/fondness-chain/fondcore/utils"
 )
 
 var (
