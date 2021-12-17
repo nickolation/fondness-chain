@@ -7,9 +7,9 @@ import (
 	"strconv"
 
 	//chain "github.com/nickolation/fondness-chain/blockchain/chaincore"
-	"github.com/nickolation/fondness-chain/blockchain/assets"
-	"github.com/nickolation/fondness-chain/blockchain/chaincore"
-	"github.com/nickolation/fondness-chain/core/utils"
+	"github.com/nickolation/fondness-chain/fondcore/chain/assets"
+	"github.com/nickolation/fondness-chain/fondcore/chain/chaincore"
+	"github.com/nickolation/fondness-chain/fondcore/utils"
 	"github.com/spf13/cobra"
 )
 
