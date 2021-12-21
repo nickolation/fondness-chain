@@ -6,14 +6,17 @@ import (
 	"encoding/gob"
 	"log"
 	"os"
+	"path/filepath"
+	"strings"
 
+	"github.com/dgraph-io/badger"
 	"github.com/nickolation/fondness-chain/fondcore/chain/assets"
 	"github.com/nickolation/fondness-chain/fondcore/utils"
 )
 
 const (
 	//	file == existence blockchain
-	dbPath = "./source/chain/MANIFEST"
+	dbPath = "./source/chain/chain_%s"
 )
 
 //	Hanlder with logger based on getting description
@@ -79,19 +82,80 @@ func (tx *Tx) ToByte() []byte {
 }
 
 
-//	next logic 
+//	Decode bytes to the Tx object 
 func ToTX(buff []byte) Tx {
-	return Tx{}
+	var tx Tx 
+	
+	dec := gob.NewDecoder(bytes.NewReader(buff))
+	utils.FHandle(
+		"decote byte to tx",
+		dec.Decode(&tx),
+	)
+	return tx
 }
 
 //	Bool status of existence db
 func DbExist(path string) bool {
-	if _, err := os.Stat(path); os.IsNotExist(err) {
+	if _, err := os.Stat(path + "/MANIFEST"); os.IsNotExist(err) {
 		return false
 	}
 
 	return true
 }
+
+var (
+	lockCursor = "LOCK"
+)
+
+//	Remove the lock file, generate the new opts with truncate functional and open the db
+func troughLock(dir string, opts badger.Options) (*badger.DB, error) {
+	lockPath := filepath.Join(dir, lockCursor)
+	if err := os.Remove(lockPath); err != nil {
+		utils.Log(
+			"removing the LOCK",
+			err,
+		)
+		return nil, err
+	}
+
+	reOpts := opts 
+	reOpts.Truncate = true 
+	db, err := badger.Open(reOpts)
+
+	utils.FHandle(
+		"open badger reopts",
+		err,
+	)
+
+	return db, err
+}
+
+
+//	Connect to the db with the lock-retryer 
+func connDb(dir string, opts badger.Options) (*badger.DB, error) {
+	if db, err := badger.Open(opts); err != nil {
+		if strings.Contains(err.Error(), lockCursor) {
+			if db, err := troughLock(dir, opts); err == nil {
+				log.Printf("\ndb is unlocked!\n")
+
+				return db, err
+			}
+			utils.Log(
+				"db isn't unlocked",
+				err,
+			)
+		} 
+		utils.Log(
+			"open db ununlock err",
+			err,
+		)
+
+		return nil, err
+	} else {
+		return db, err
+	}
+}
+
 
 //	Hash tx without the unic Hash
 func (tx *Tx) ToHash() []byte {

@@ -3,19 +3,17 @@ package chaincore
 import (
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"log"
 	"runtime"
+	"time"
 
 	"github.com/dgraph-io/badger"
 	"github.com/nickolation/fondness-chain/fondcore/utils"
 )
 
-
 var (
-	Tail    = []byte("tl")
-
-	sourcePath = "./source/chain"
-
+	Tail     = []byte("tl")
 	stdForce = 1000
 )
 
@@ -25,6 +23,12 @@ var (
 
 //	main entitie of block is part of chain
 type FondBlock struct {
+	//	time adding
+	Stamp int64
+
+	//	idx of block in the chain - height
+	Idx int
+
 	//	block transactions
 	Txn []Tx
 
@@ -38,8 +42,10 @@ type FondBlock struct {
 }
 
 //	produce new block before the linking with chain
-func ProduceBlock(t []Tx, p []byte) FondBlock {
+func ProduceBlock(t []Tx, p []byte, idx int) FondBlock {
 	block := FondBlock{
+		Stamp:    time.Now().Unix(),
+		Idx:      idx,
 		Hash:     []byte{},
 		Txn:      t,
 		PrevHash: p,
@@ -62,21 +68,18 @@ type FondChain struct {
 	TailHash []byte
 }
 
-
-func (chain *FondChain) MaxSize() int {
-	return 0
-}
-
-
-//	init the block with data
-//	link new block with fondChain
-func (chain *FondChain) LinkBlock(txn []Tx) *FondBlock {
-	var tailHash []byte
+//	Mine the block and set it to the db
+func (chain *FondChain) Mine(txn []Tx) *FondBlock {
+	var (
+		tailHash []byte
+		tailIdx  int
+	)
 
 	for _, tx := range txn {
 		if !chain.VefifyTX(&tx) {
+			log.Printf("hash is - [%x]\n", tx.Hash)
 			utils.FHandle(
-				"unverified tx - link is locked",
+				"unverified tx - mine is locked",
 				errUnverTx,
 			)
 		}
@@ -100,6 +103,25 @@ func (chain *FondChain) LinkBlock(txn []Tx) *FondBlock {
 			err,
 		)
 
+		it, err := txn.Get(tailHash)
+		utils.FHandle(
+			"getting tail block item",
+			err,
+		)
+
+		var block []byte
+		err = it.Value(func(val []byte) error {
+			block = val
+			return nil
+		})
+		utils.FHandle(
+			"getting tail block value",
+			err,
+		)
+
+		b := ToBlocker(block)
+		tailIdx = b.Idx
+
 		return err
 	})
 
@@ -108,7 +130,7 @@ func (chain *FondChain) LinkBlock(txn []Tx) *FondBlock {
 		err,
 	)
 
-	block := ProduceBlock(txn, tailHash)
+	block := ProduceBlock(txn, tailHash, tailIdx+1)
 
 	//	update chain - add new block and write tail to base
 	err = chain.Db.Update(func(txn *badger.Txn) error {
@@ -133,9 +155,172 @@ func (chain *FondChain) LinkBlock(txn []Tx) *FondBlock {
 	return &block
 }
 
+//	Check the block is in the base.
+//	Set block in the base by hash.
+//	If block.Idx > tail.Idx -> update the tail: tailHash = block.hash.
+//	It provides the making of the best height chain in blockhain.
+func (chain *FondChain) LinkBlock(block *FondBlock) {
+	err := chain.Db.Update(func(txn *badger.Txn) error {
+
+		//	Block already is in the base
+		if _, err := txn.Get(block.Hash); err == nil {
+			return nil
+		}
+
+		blockBuff := block.ToByter()
+		err := txn.Set(block.Hash, blockBuff)
+		utils.FHandle(
+			"set the block by hash",
+			err,
+		)
+
+		it, err := txn.Get([]byte(Tail))
+		utils.FHandle(
+			"get the tail block",
+			err,
+		)
+
+		var tailHash []byte
+		err = it.Value(func(val []byte) error {
+			tailHash = val
+			return nil
+		})
+		utils.FHandle(
+			"get the tail data-hash",
+			err,
+		)
+
+		b, err := txn.Get(tailHash)
+		utils.FHandle(
+			"get the block data by last hash",
+			err,
+		)
+
+		var blockBytes []byte
+		err = b.Value(func(val []byte) error {
+			blockBytes = val
+			return nil
+		})
+		utils.FHandle(
+			"get the block data - serialization",
+			err,
+		)
+
+		tail := ToBlocker(blockBytes)
+
+		if block.Idx > tail.Idx {
+			err = txn.Set([]byte(Tail), block.Hash)
+			utils.FHandle(
+				"set the new tail",
+				err,
+			)
+			chain.TailHash = block.Hash
+		}
+
+		return nil
+	})
+	utils.Handle(
+		"update the tail with new block",
+		err,
+	)
+}
+
+//	Returns the max size of blockchain in the base.
+func (chain *FondChain) MaxSize() int {
+	var tail FondBlock
+
+	err := chain.Db.View(func(txn *badger.Txn) error {
+		it, err := txn.Get([]byte(Tail))
+		utils.FHandle(
+			"get the tail block",
+			err,
+		)
+
+		var tailHash []byte
+		err = it.Value(func(val []byte) error {
+			tailHash = val
+			return nil
+		})
+		utils.FHandle(
+			"get the tail data-hash",
+			err,
+		)
+
+		b, err := txn.Get(tailHash)
+		utils.FHandle(
+			"get the block data by last hash",
+			err,
+		)
+
+		var blockBytes []byte
+		err = b.Value(func(val []byte) error {
+			blockBytes = val
+			return nil
+		})
+		utils.FHandle(
+			"get the block data - serialization",
+			err,
+		)
+
+		tail = *ToBlocker(blockBytes)
+		return nil
+	})
+	utils.Handle(
+		"get tail block for the idx value",
+		err,
+	)
+
+	return tail.Idx
+}
+
+//	Get the matrix of all blocks hashes in the database.
+func (chain *FondChain) BlocksHashes() [][]byte {
+	var matrix [][]byte
+
+	iter := chain.Iterator()
+
+	for iter.Step() {
+		matrix = append(matrix, iter.Block().Hash)
+	}
+
+	return matrix
+}
+
+//	Search the block by hash in the badgere database.
+func (chain *FondChain) BlockByHash(hash []byte) (FondBlock, error) {
+	var block FondBlock
+
+	err := chain.Db.View(func(txn *badger.Txn) error {
+		it, err := txn.Get(hash)
+		utils.FHandle(
+			"get the block-data by hash",
+			err,
+		)
+
+		var buff []byte
+		err = it.Value(func(val []byte) error {
+			buff = val
+			return nil
+		})
+		utils.FHandle(
+			"get the data of item - block",
+			err,
+		)
+
+		block = *ToBlocker(buff)
+		return nil
+	})
+	utils.FHandle(
+		"get the block by hash",
+		err,
+	)
+
+	return block, err
+}
+
 //	Generate the genesis block with coinbase tx
 func FondGenesis(coinbase Tx) *FondBlock {
-	block := ProduceBlock([]Tx{coinbase}, []byte{})
+	block := ProduceBlock([]Tx{coinbase}, []byte{}, 0)
 	return &block
 }
 
@@ -149,16 +334,18 @@ func (block *FondBlock) IsGenesis() bool {
 }
 
 //		init chain with db
-func ExistChainStart(addr string) *FondChain {
-	if !DbExist(dbPath) {
+func ExistChainStart(id string) *FondChain {
+	path := fmt.Sprintf(dbPath, id)
+	if !DbExist(path) {
 		log.Printf("Chain [db] isn't exist")
 		runtime.Goexit()
 	}
 
 	var tailHash []byte
 
-	opt := badger.DefaultOptions(sourcePath)
-	db, err := badger.Open(opt)
+	opts := badger.DefaultOptions(path)
+
+	db, err := connDb(path, opts)
 	Handle(
 		"error with open the chain base",
 		err,
@@ -190,17 +377,19 @@ func ExistChainStart(addr string) *FondChain {
 	}
 }
 
-//		init chain without db
-func AbsentChainStart(addr string) *FondChain {
-	if DbExist(dbPath) {
+//	Init chain without db. Start the chain and write in in the badger.
+func AbsentChainStart(addr string, id string) *FondChain {
+	path := fmt.Sprintf(dbPath, id)
+	if DbExist(path) {
 		log.Printf("Chain [db] is already exist")
 		runtime.Goexit()
 	}
 
 	var tailHash []byte
 
-	opt := badger.DefaultOptions(sourcePath)
-	db, err := badger.Open(opt)
+	opts := badger.DefaultOptions(path)
+
+	db, err := connDb(path, opts)
 	Handle(
 		"error with open the chain base",
 		err,
@@ -238,18 +427,17 @@ func AbsentChainStart(addr string) *FondChain {
 	}
 }
 
-
 //	Iterates the chain and founds all utx - utxo map elements.
-//	Veiws it in the map [hash] - []OutTx sort	 
+//	Veiws it in the map [hash] - []OutTx sort
 func (chain *FondChain) ViewUTXO() map[string]TXOSet {
 	//	mapping the parent tx hash and txoSet - slie of outs
 	utxo := make(map[string]TXOSet)
 	//	spent tx
-	stx := make(map[string][]int) 
+	stx := make(map[string][]int)
 
-	iter := chain.Iterator() 
+	iter := chain.Iterator()
 	for iter.Step() {
-		txn := iter.Txn() 
+		txn := iter.Txn()
 
 		for _, tx := range txn {
 			txHash := hex.EncodeToString(tx.Hash)
@@ -264,7 +452,7 @@ func (chain *FondChain) ViewUTXO() map[string]TXOSet {
 						}
 					}
 				}
-				
+
 				//	appending the out slice to map by hash of parent tx
 				outs := utxo[txHash]
 				outs.Outs = append(outs.Outs, out)

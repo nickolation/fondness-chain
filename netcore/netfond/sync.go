@@ -1,6 +1,7 @@
 package netfond
 
 import (
+	"fmt"
 	"io/ioutil"
 	"log"
 	"net"
@@ -14,7 +15,7 @@ import (
 )
 
 func DeadNode(chain *chaincore.FondChain) {
-	deathChan := make(chan os.Signal)
+	deathChan := make(chan os.Signal, 2)
 
 	signal.Notify(deathChan, syscall.SIGTERM, syscall.SIGINT)
 	<-deathChan
@@ -40,8 +41,8 @@ func HandleConn(conn net.Conn, chain *chaincore.FondChain) {
 		err,
 	)
 
-	cmd := DecodeCmd(req)
-	log.Printf("\ncmd is - [%x]\n", cmd)
+	cmd := DecodeCmd(req[:cmdClaim])
+	log.Printf("\ncmd is - [%s]\n", cmd)
 
 	//	handle the all commands
 	switch cmd {
@@ -63,4 +64,39 @@ func HandleConn(conn net.Conn, chain *chaincore.FondChain) {
 		log.Println("Unknown command")
 	}
 
+}
+
+
+// Start the Node server with listening the localhost:id addr and sending the miner info
+func StartNode(id string, minerAddr string) {
+	syncAddr = fmt.Sprintf("localhost:%s", id)
+
+	log.Printf("node addr is - [%s]", syncAddr)
+	mineAddr = minerAddr 
+
+	ln, err := net.Listen(protocol, syncAddr)
+	utils.FHandle(
+		"start the node server",
+		err,
+	)
+
+	defer ln.Close() 
+
+	chain := chaincore.ExistChainStart(id)
+	go DeadNode(chain)
+
+	sync := ListNodes[0]
+	if syncAddr != sync {
+		SendVersion(sync, chain)
+	}
+
+	for {
+		conn, err := ln.Accept()
+		utils.FHandle(
+			"connection to the node",
+			err,
+		)
+
+		go HandleConn(conn, chain)
+	}
 }

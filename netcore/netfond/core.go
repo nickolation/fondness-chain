@@ -23,7 +23,7 @@ var (
 	syncAddr string
 	mineAddr string
 
-	listNodes = []string{syncInit}
+	ListNodes = []string{syncInit}
 
 	blockTransfer = [][]byte{}
 
@@ -78,9 +78,8 @@ var (
 )
 
 func SendData(addr string, data []byte) {
+	log.Printf("addr is - [%s]\n", addr)
 	conn, err := net.Dial(protocol, addr)
-	defer conn.Close()
-
 	if err != nil {
 		utils.Log(
 			"addr isn't available",
@@ -88,14 +87,18 @@ func SendData(addr string, data []byte) {
 		)
 
 		var clearNodes []string
-		for _, a := range listNodes {
+		for _, a := range ListNodes {
 			if a != addr {
 				clearNodes = append(clearNodes, a)
 			}
 		}
 
-		listNodes = clearNodes
+		ListNodes = clearNodes
+
+		return
 	}
+
+	defer conn.Close()
 
 	_, err = io.Copy(conn, bytes.NewReader(data))
 	utils.FHandle(
@@ -107,7 +110,7 @@ func SendData(addr string, data []byte) {
 //	Send Addrs data to the address
 func SendAddr(addr string) {
 	a := Addr{
-		List: listNodes,
+		List: ListNodes,
 	}
 
 	a.List = append(a.List, syncAddr)
@@ -214,14 +217,14 @@ func HandleAddr(request []byte) {
 		dec.Decode(&addr),
 	)
 
-	listNodes = append(listNodes, addr.List...)
-	log.Printf("THE LIST COUNT - [%d]", len(listNodes))
+	ListNodes = append(ListNodes, addr.List...)
+	log.Printf("THE LIST COUNT - [%d]", len(ListNodes))
 	RequestBlocks()
 }
 
 //	Send addr data to the blocks by GetBlocks cmd
 func RequestBlocks() {
-	for _, addr := range listNodes {
+	for _, addr := range ListNodes {
 		SendGetBlocks(addr)
 	}
 }
@@ -243,10 +246,10 @@ func HandleBlock(request []byte, chain *chaincore.FondChain) {
 	)
 
 	b := chaincore.ToBlocker(block.Block)
-	log.Println("\nGet the new block!\n")
+	log.Print("\nGet the new block!\n")
 
 	//	next logic
-	chain.AddBlock(b)
+	chain.LinkBlock(b)
 	log.Printf("\nAdded the new block with hash - [%x]!\n", b.Hash)
 
 	if len(blockTransfer) > 0 {
@@ -255,11 +258,12 @@ func HandleBlock(request []byte, chain *chaincore.FondChain) {
 
 		blockTransfer = blockTransfer[1:]
 	} else {
-		UTXOSet := chaincore.UTXOSet{chain}
+		UTXOSet := chaincore.UTXOSet{
+			Chain: chain,
+		}
 		UTXOSet.Index()
 	}
 }
-
 
 func HandleGetBlocks(request []byte, chain *chaincore.FondChain) {
 	var buff bytes.Buffer
@@ -277,12 +281,10 @@ func HandleGetBlocks(request []byte, chain *chaincore.FondChain) {
 		dec.Decode(&blocks),
 	)
 
-
-	//	next logic 
-	hashes := chain.GetBlockHashes()
+	//	next logic
+	hashes := chain.BlocksHashes()
 	SendInv(blocks.From, "block", hashes)
 }
-
 
 func HandleGetData(request []byte, chain *chaincore.FondChain) {
 	var buff bytes.Buffer
@@ -300,21 +302,20 @@ func HandleGetData(request []byte, chain *chaincore.FondChain) {
 		dec.Decode(&data),
 	)
 
-
 	kind := data.Kind
 	hash := data.Hash
 	addr := data.From
 
 	switch kind {
 	case "block":
-		//	next logic 
-		b, err := chain.GetBlock([]byte(hash))	
+		//	next logic
+		b, err := chain.BlockByHash([]byte(hash))
 		utils.FHandle(
 			"getting the block by hash",
 			err,
 		)
 
-		SendBlock(addr, b)
+		SendBlock(addr, &b)
 	case "tx":
 		txHash := hex.EncodeToString(hash)
 		tx := txTransfer[txHash]
@@ -337,25 +338,24 @@ func HandleVersion(request []byte, chain *chaincore.FondChain) {
 		"decode bytes to version",
 		dec.Decode(&v),
 	)
+	log.Printf("version - [%v]\n", v)
 
-
-	//	next logic 
-	maxSize := chain.GetBestHeight()
+	//	next logic
+	maxSize := chain.MaxSize()
 	otherSize := v.MaxSize
 
 	if maxSize < otherSize {
 		SendGetBlocks(v.From)
 	}
 
-	//	alternative suit 
+	log.Printf("From - [%s]", v.From)
+	//	alternative suit
 	SendVersion(v.From, chain)
 
-
 	if !NodeExistance(v.From) {
-		listNodes = append(listNodes, v.From)
+		ListNodes = append(ListNodes, v.From)
 	}
 }
-
 
 func HandleTx(request []byte, chain *chaincore.FondChain) {
 	var buff bytes.Buffer
@@ -371,14 +371,15 @@ func HandleTx(request []byte, chain *chaincore.FondChain) {
 		"decode bytes to tx",
 		dec.Decode(&T),
 	)
-	
+
+	//	next logic
 	tx := chaincore.ToTX(T.Tx)
 	txTransfer[hex.EncodeToString(tx.Hash)] = tx
 
 	log.Printf("%s, %d", syncAddr, len(txTransfer))
 
-	if syncAddr == listNodes[0] {
-		for _, addr := range listNodes {
+	if syncAddr == ListNodes[0] {
+		for _, addr := range ListNodes {
 			if addr != syncAddr && addr != T.From {
 				SendInv(addr, "tx", [][]byte{tx.Hash})
 			}
@@ -390,16 +391,15 @@ func HandleTx(request []byte, chain *chaincore.FondChain) {
 	}
 }
 
-
 func MineTx(chain *chaincore.FondChain) {
-	var txs []*chaincore.Tx
+	var txs []chaincore.Tx
 
 	for hash := range txTransfer {
 		log.Printf("tx: %s\n", txTransfer[hash].Hash)
 
 		tx := txTransfer[hash]
 		if chain.VefifyTX(&tx) {
-			txs = append(txs, &tx)
+			txs = append(txs, tx)
 		}
 	}
 
@@ -409,12 +409,14 @@ func MineTx(chain *chaincore.FondChain) {
 	}
 
 	cbTx := chaincore.CoinbaseTx(mineAddr, "")
-	txs = append(txs, cbTx)
+	txs = append(txs, *cbTx)
 
-	//	next logic 
-	newBlock := chain.MineBlock(txs)
+	//	next logic
+	newBlock := chain.Mine(txs)
 
-	UTXOSet  := chaincore.UTXOSet{chain}
+	UTXOSet := chaincore.UTXOSet{
+		Chain: chain,
+	}
 	UTXOSet.Index()
 
 	log.Println("New Block mined")
@@ -424,7 +426,7 @@ func MineTx(chain *chaincore.FondChain) {
 		delete(txTransfer, txHash)
 	}
 
-	for _, addr := range listNodes {
+	for _, addr := range ListNodes {
 		if addr != syncAddr {
 			SendInv(addr, "block", [][]byte{newBlock.Hash})
 		}
@@ -434,7 +436,6 @@ func MineTx(chain *chaincore.FondChain) {
 		MineTx(chain)
 	}
 }
-
 
 func HandleInv(request []byte, chain *chaincore.FondChain) {
 	var buff bytes.Buffer
@@ -453,8 +454,7 @@ func HandleInv(request []byte, chain *chaincore.FondChain) {
 
 	log.Printf("Recevied inventory with %d %s\n", len(inv.Pool), inv.Kind)
 
-
-	kind := inv.Kind 
+	kind := inv.Kind
 	addr := inv.From
 
 	switch kind {
@@ -466,14 +466,14 @@ func HandleInv(request []byte, chain *chaincore.FondChain) {
 		newTransfer := [][]byte{}
 		transfer := inv.Pool
 		for _, b := range transfer {
-			if bytes.Compare(b, blockHash) != 0 {
+			if !bytes.Equal(b, blockHash) {
 				newTransfer = append(newTransfer, b)
 			}
 		}
 
-		transfer = newTransfer
+		blockTransfer = newTransfer
 
-	case "tx":	
+	case "tx":
 		txHash := inv.Pool[0]
 
 		if txTransfer[hex.EncodeToString(txHash)].Hash == nil {

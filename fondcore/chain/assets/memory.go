@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/elliptic"
 	"encoding/gob"
+	"fmt"
 	"io/ioutil"
 	"os"
 
@@ -12,7 +13,7 @@ import (
 
 const (
 	//	Path to the storage memory
-	memPath = "./source/memory/memory.data"
+	memPath = "./source/memory/memory_%s.data"
 )
 
 
@@ -24,7 +25,7 @@ type Memory struct {
 
 
 //	Writes heart to memory file
-func (mem *Memory) WriteMemory() {
+func (mem *Memory) WriteMemory(id string) {
 	var buff bytes.Buffer
 
 	gob.Register(elliptic.P256())
@@ -35,16 +36,19 @@ func (mem *Memory) WriteMemory() {
 		enc.Encode(mem),
 	)
 
+	path := fmt.Sprintf(memPath, id)
+
 	utils.Handle(
 		"write heart to the file",
-		ioutil.WriteFile(memPath, buff.Bytes(), 0644),
+		ioutil.WriteFile(path, buff.Bytes(), 0644),
 	)
 }
 
 
 //	Read heart data from memory file
-func (mem *Memory) ReadMemory() error {
-	if _, err := os.Stat(memPath); os.IsNotExist(err) {
+func (mem *Memory) ReadMemory(id string) error {
+	path := fmt.Sprintf(memPath, id)
+	if _, err := os.Stat(path); os.IsNotExist(err) {
 		utils.Log(
 			"file mem isn't exist",
 			err,
@@ -55,7 +59,7 @@ func (mem *Memory) ReadMemory() error {
 
 	var m Memory
 
-	info, err := ioutil.ReadFile(memPath)
+	info, err := ioutil.ReadFile(path)
 	if err != nil {
 		utils.Log(
 			"read memfile",
@@ -85,11 +89,11 @@ func (mem *Memory) ReadMemory() error {
 
 
 //	Memory generator with wallets.
-func AccesMemory() (*Memory, error) {
+func AccesMemory(id string) (*Memory, error) {
 	mem := Memory{}
 	mem.Storage = make(map[string]*Heart)
 
-	err := mem.ReadMemory()
+	err := mem.ReadMemory(id)
 	return &mem, err
 }
 

@@ -209,8 +209,8 @@ func (tx *Tx) Verify(mapTXs map[string]Tx) bool {
 
 		pubKey := ecdsa.PublicKey{
 			Curve: curve,
-			X: &x,
-			Y: &y,
+			X:     &x,
+			Y:     &y,
 		}
 		if !ecdsa.Verify(&pubKey, unsTx.Hash, &r, &s) {
 			return false

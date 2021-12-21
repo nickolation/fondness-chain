@@ -100,24 +100,13 @@ func CoinbaseTx(addr, info string) *Tx {
 }
 
 //	Makes new tx from to with amount-level
-func (uxoset *UTXOSet) ProduceTx(from, to string, level int) (*Tx, error) {
+func (uxoset *UTXOSet) ProduceTx(h *assets.Heart, to string, level int) (*Tx, error) {
 	var (
 		in  []InTx
 		out []OutTx
 	)
 
-	mem, err := assets.AccesMemory()
-	Handle(
-		"accec to the memory - produce tx is locked",
-		err,
-	)
-
-	h := mem.GetHeart(from)
-
-	pubKey := h.PubKey.Key
-	privKey := h.PrivKey.Key
-
-	pubHash := assets.PubHash(pubKey)
+	pubHash := assets.PubHash(h.PubKey.Key)
 	sum, freeOut := uxoset.FondableUTXO(pubHash, level)
 
 	if ForceLess(sum, level) {
@@ -135,6 +124,7 @@ func (uxoset *UTXOSet) ProduceTx(from, to string, level int) (*Tx, error) {
 		to,
 	))
 
+	from := string(h.Addr())
 	//	Generate balance/change out
 	if ForceGreat(sum, level) {
 		out = append(out, *ProduceTXO(
@@ -155,7 +145,7 @@ func (uxoset *UTXOSet) ProduceTx(from, to string, level int) (*Tx, error) {
 				Ref:    bHash,
 				RefIdx: out,
 				Sign:   nil,
-				PubKey: pubKey,
+				PubKey: h.PubKey.Key,
 			})
 		}
 	}
@@ -165,7 +155,7 @@ func (uxoset *UTXOSet) ProduceTx(from, to string, level int) (*Tx, error) {
 		Out: out,
 	}
 	tx.Hash = tx.ToHash()
-	uxoset.Chain.SignTX(&tx, privKey)
+	uxoset.Chain.SignTX(&tx, h.PrivKey.Key)
 
 	return &tx, nil
 }

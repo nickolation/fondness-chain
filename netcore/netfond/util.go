@@ -31,7 +31,7 @@ func DecodeCmd(buff []byte) string {
 
 
 func NodeExistance(addr string) bool {
-	for _, a := range listNodes {
+	for _, a := range ListNodes {
 		if a == addr {
 			return true
 		}
